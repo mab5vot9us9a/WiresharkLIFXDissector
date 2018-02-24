@@ -6,10 +6,10 @@
 -- It attaches to UDP port 56700 (the default port for LIFX lights).
 
 -- Filter for Set/State Packets:
--- (lifx.type & 0x1 or (lifx.type == 102 or lifx.type == 50 or lifx.type == 52 or lifx.type == 58 or lifx.type == 102 or lifx.type == 118 or lifx.type == 122 or lifx.type == 506 or lifx.type == 508)) and !(lifx.type == 23 or lifx.type == 51 or lifx.type == 101 or lifx.type == 507)
+-- (lifx.type & 0x1 or (lifx.type == 102 or lifx.type == 50 or lifx.type == 52 or lifx.type == 58 or lifx.type == 102 or lifx.type == 118 or lifx.type == 122 or lifx.type == 506 or lifx.type == 508 or lifx.type == 702)) and !(lifx.type == 23 or lifx.type == 51 or lifx.type == 101 or lifx.type == 507)
 -- 
 -- Filter for Get Packets:
--- !((lifx.type & 0x1 or (lifx.type == 102 or lifx.type == 50 or lifx.type == 52 or lifx.type == 58 or lifx.type == 102 or lifx.type == 118 or lifx.type == 122 or lifx.type == 506 or lifx.type == 508)) and !(lifx.type == 23 or lifx.type == 51 or lifx.type == 101 or lifx.type == 507))
+-- !((lifx.type & 0x1 or (lifx.type == 102 or lifx.type == 50 or lifx.type == 52 or lifx.type == 58 or lifx.type == 102 or lifx.type == 118 or lifx.type == 122 or lifx.type == 506 or lifx.type == 508 or lifx.type == 702)) and !(lifx.type == 23 or lifx.type == 51 or lifx.type == 101 or lifx.type == 507))
 
 
 do
@@ -39,8 +39,9 @@ do
     local ECHO_REQUEST = Proto("lifx.echorequest", "Echo Request")
     local ECHO_RESPONSE = Proto("lifx.echoresponse", "Echo Response")
 
-    -- COLOR Data Type
+    -- Data Types
     local COLOR = Proto("lifx.color", "Color")
+    local TILE = Proto("lifx.tile", "Tile")
 
     -- Light Messages
     local SET_COLOR = Proto("lifx.setcolor", "Set Color")
@@ -59,6 +60,14 @@ do
     local STATE_MULTI_ZONE = Proto("lifx.statemultizone", "State Multi Zone")
     local SET_MOVE_EFFECT = Proto("lifx.setmoveeffect", "Set Move Effect")
     local STATE_MOVE_EFFECT = Proto("lifx.statemoveeffect", "State Move Effect")
+
+    -- Tile Messages
+    local GET_DEVICE_CHAIN = Proto("lifx.getdevicechain", "Get Device Chain")
+    local STATE_DEVICE_CHAIN = Proto("lifx.statedevicechain", "State Device Chain")
+    local SET_USER_POSITION = Proto("lifx.setuserposition", "Set User Position")
+    local GET_TILE_STATE64 = Proto("lifx.gettilestate64", "Get Tile State 64")
+    local STATE_TILE_STATE64 = Proto("lifx.statetilestate64", "State Tile State 64")
+    local SET_TILE_STATE64 = Proto("lifx.settilestate64", "Set Tile State 64")
 
     
     -- Create the protocol fields
@@ -86,7 +95,8 @@ do
                          [59] = "echoResponse", [101] = "get", [102] = "setColor", [103] = "setWaveform", [119] = "setWaveformOptional", [107] = "state",
                          [116] = "getLightPower", [117] = "setLightPower", [118] = "stateLightPower", [120] = "getInfrared", [121] = "stateInfrared",
                          [122] = "setInfrared", [501] = "setColorZones", [502] = "getColorZones", [503] = "stateZone", [506] = "stateMultiZone",
-                         [507] = "getMoveEffect", [508] = "setMoveEffect", [509] = "stateMoveEffect"}
+                         [507] = "getMoveEffect", [508] = "setMoveEffect", [509] = "stateMoveEffect", [702] = "stateDeviceChain", [703] = "setUserPosition",
+                         [707] = "getTileState", [711] = "stateTileState", [715] = "setTileState"}
 
     local ph = PROTOCOL_HEADER.fields
     ph.reservedTwo = ProtoField.uint64("lifx.reserved2", "Reserved2", base.DEC, nil, nil, "Reserved.")
@@ -99,8 +109,9 @@ do
     local products = {[1] = "Original 1000", [3] = "Color 650", [10] = "White 800 (Low Voltage)", [11] = "White 800 (High Voltage)",
                      [18] = "White 900 BR30 (Low Voltage)", [20] = "Color 1000 BR30", [22] = "Color 1000", [27] = "LIFX A19", [28] = "LIFX BR30",
                      [29] = "LIFX+ A19", [30] = "LIFX+ BR30", [31] = "LIFX Z", [32] = "LIFX Z 2", [36] = "LIFX Downlight", [37] = "LIFX Downlight",
-                     [43] = "LIFX A19", [44] = "LIFX BR30", [45] = "LIFX+ A19", [46] = "LIFX+ BR30", [49] = "LIFX Mini", [50] = "LIFX Mini Day and Dusk",
-                     [51] = "LIFX Mini White", [52] = "LIFX GU10"}
+                     [38] = "LIFX Beam", [43] = "LIFX A19", [44] = "LIFX BR30", [45] = "LIFX+ A19", [46] = "LIFX+ BR30", [49] = "LIFX Mini",
+                     [50] = "LIFX Mini Day and Dusk", [51] = "LIFX Mini White", [52] = "LIFX GU10", [55] = "LIFX Tile", [59] = "LIFX Mini Color",
+                     [60] = "LIFX Mini Day and Dusk", [61] = "LIFX Mini White"}
 
     local c = COLOR.fields
     c.hue = ProtoField.uint16("lifx.hue", "Hue", base.DEC, nil, nil, "Hue: range 0 to 65535")
@@ -233,6 +244,7 @@ do
     local setInfra = SET_INFRARED.fields
     setInfra.level = ProtoField.uint16("lifx.infra.setPower", "Infrared Brighness Level", base.DEC, nil, nil, "The maximum setting for the infrared channel.")
 
+    -- MultiZone Payloads
     local apply = {[0] = "No Apply", [1] = "Apply", [2] = "Apply Only"}
 
     local setColZone = SET_COLOR_ZONES.fields
@@ -254,18 +266,65 @@ do
     local stteMultiZone = STATE_MULTI_ZONE.fields
     stteMultiZone.count = ProtoField.uint8("lifx.stateMultiZone.count", "Count", base.DEC, nil, nil, "Contains the count of the total number of zones available on the device.")
     stteMultiZone.index = ProtoField.uint8("lifx.stateMultiZone.index", "Index", base.DEC, nil, nil, "Indicates which zone is represented.")
-    stteMultiZone.color0 = ProtoField.protocol("lifx.stateMultiZone.color0", "Color0", nil, "Color in HSBK.")
-    stteMultiZone.color1 = ProtoField.protocol("lifx.stateMultiZone.color1", "Color1", nil, "Color in HSBK.")
-    stteMultiZone.color2 = ProtoField.protocol("lifx.stateMultiZone.color2", "Color2", nil, "Color in HSBK.")
-    stteMultiZone.color3 = ProtoField.protocol("lifx.stateMultiZone.color3", "Color3", nil, "Color in HSBK.")
-    stteMultiZone.color4 = ProtoField.protocol("lifx.stateMultiZone.color4", "Color4", nil, "Color in HSBK.")
-    stteMultiZone.color5 = ProtoField.protocol("lifx.stateMultiZone.color5", "Color5", nil, "Color in HSBK.")
-    stteMultiZone.color6 = ProtoField.protocol("lifx.stateMultiZone.color6", "Color6", nil, "Color in HSBK.")
-    stteMultiZone.color7 = ProtoField.protocol("lifx.stateMultiZone.color7", "Color7", nil, "Color in HSBK.")
+    stteMultiZone.colors = ProtoField.protocol("lifx.stateMultiZone.color", "Colors", nil, "Colors in HSBK.")
 
-    local stteMultiZone = STATE_MULTI_ZONE.fields
+    -- Tile Payloads
+    local tle = TILE.fields
+    tle.reserved1 = ProtoField.int16("lifx.tile.res1", "Reserved 1", base.DEC)
+    tle.reserved2 = ProtoField.int16("lifx.tile.res2", "Reserved 2", base.DEC)
+    tle.reserved3 = ProtoField.int16("lifx.tile.res3", "Reserved 3", base.DEC)
+    tle.reserved4 = ProtoField.int16("lifx.tile.res4", "Reserved 4", base.DEC)
+    tle.userX = ProtoField.float("lifx.tile.userx", "User X", nil, "The x-position of each tile")
+    tle.usery = ProtoField.float("lifx.tile.usery", "User Y", nil, "The y-position of each tile")
+    tle.width = ProtoField.uint8("lifx.tile.width", "Width", base.DEC, nil, nil, "The number of pixels that are on the x-axis of the tile.")
+    tle.height = ProtoField.uint8("lifx.tile.heigth", "Height", base.DEC, nil, nil, "The number of pixels that are on the y-axis of the tile.")
+    tle.reserved5 = ProtoField.uint8("lifx.tile.res5", "Reserved 5", base.DEC)
+    tle.deviceVersionVendor = ProtoField.uint32("lifx.tile.vendor", "Vendor ID", base.DEC)
+    tle.deviceVersionProduct = ProtoField.uint32("lifx.tile.product", "Product ID", base.DEC, products)
+    tle.deviceVersionVersion = ProtoField.uint32("lifx.tile.version", "Hardware Version", base.DEC)
+    tle.firmwareBuild = ProtoField.uint64("lifx.tile.fwbuild", "Firmware Build", base.DEC)
+    tle.reserved6 = ProtoField.uint64("lifx.tile.res6", "Reserved 6", base.DEC)
+    tle.firmwareVersion = ProtoField.uint32("lifx.tile.fwversion", "Firmware Version", base.DEC)
+    tle.reserved7 = ProtoField.uint32("lifx.tile.res7", "Reserved 7", base.DEC)
+
+    local stteDevChain = STATE_DEVICE_CHAIN.fields
+    stteDevChain.startIndex = ProtoField.uint8("lifx.stateDeviceChain.start", "Start Index", base.DEC, nil, nil, "Start index of the first of the 16 Tiles.")
+    stteDevChain.totalCount = ProtoField.uint8("lifx.stateDeviceChain.total", "Total Count", base.DEC, nil, nil, "The overall count of Tiles in this chain.")
+    stteDevChain.tiles = ProtoField.protocol("lifx.stateDeviceChain.tiles", "Tiles")
+
+    local setUserPos = SET_USER_POSITION.fields
+    setUserPos.tileIndex = ProtoField.uint8("lifx.setUserPosition.index", "Tile Index", base.DEC, nil, nil, "The index of the Tile.")
+    setUserPos.reserved = ProtoField.int16("lifx.setUserPosition.res", "Reserved", base.DEC)
+    setUserPos.userX = ProtoField.float("lifx.setUserPosition.userx", "User X", nil, "The x-position of the tile")
+    setUserPos.userY = ProtoField.float("lifx.setUserPosition.usery", "User Y", nil, "The y-position of the tile")
+
+    local getTileStte = GET_TILE_STATE64.fields
+    getTileStte.tileIndex = ProtoField.uint8("lifx.getTileState.index", "Tile Index", base.DEC, nil, nil, "Used to control the starting tile in the chain.")
+    getTileStte.length = ProtoField.uint8("lifx.getTileState.length", "Length", base.DEC, nil, nil, "Used to get the state of that many tiles beginning from the tile_index.")
+    getTileStte.reserved = ProtoField.uint8("lifx.getTileState.res", "Reserved", base.DEC)
+    getTileStte.x = ProtoField.uint8("lifx.getTileState.x", "X-Position", base.DEC)
+    getTileStte.y = ProtoField.uint8("lifx.getTileState.y", "Y-Position", base.DEC)
+    getTileStte.width = ProtoField.uint8("lifx.getTileState.width", "Width", base.DEC)
+
+    local stteTileState = STATE_TILE_STATE64.fields
+    stteTileState.tileIndex = ProtoField.uint8("lifx.stateTileState.index", "Tile Index", base.DEC)
+    stteTileState.reserved = ProtoField.uint8("lifx.stateTileState.res", "Reserved", base.DEC)
+    stteTileState.x = ProtoField.uint8("lifx.stateTileState.x", "X-Position", base.DEC)
+    stteTileState.y = ProtoField.uint8("lifx.stateTileState.y", "Y-Position", base.DEC)
+    stteTileState.width = ProtoField.uint8("lifx.stateTileState.width", "Width", base.DEC)
+    stteTileState.colors = ProtoField.protocol("lifx.stateTileState.colors", "Colors", nil, "Colors in HSBK.")
+
+    local setTileStte = SET_TILE_STATE64.fields
+    setTileStte.tileIndex = ProtoField.uint8("lifx.setTileState.index", "Tile Index", base.DEC, nil, nil, "Used to control the starting tile in the chain.")
+    setTileStte.length = ProtoField.uint8("lifx.setTileState.length", "Length", base.DEC)
+    setTileStte.reserved = ProtoField.uint8("lifx.setTileState.res", "Reserved", base.DEC)
+    setTileStte.x = ProtoField.uint8("lifx.setTileState.x", "X-Position", base.DEC)
+    setTileStte.y = ProtoField.uint8("lifx.setTileState.y", "Y-Position", base.DEC)
+    setTileStte.width = ProtoField.uint8("lifx.setTileState.width", "Width", base.DEC)
+    setTileStte.colors = ProtoField.protocol("lifx.setTileState.colors", "Colors", nil, "Colors in HSBK.")
 
 
+    -- parser functions
     function stateService(tvbuffer, subtreeitem)
         local offset = 0
         local payload = subtreeitem:add(STATE_SERVICE, tvbuffer())
@@ -651,45 +710,15 @@ do
         payload:add_le(stteMultiZone.index, tvbuffer(offset, 1))
         offset = offset + 1
 
-        local hsbk0 = payload:add(COLOR, tvbuffer(offset, 8))
-        hsbk0:append_text("0")
-        colorTreeItem(hsbk0, tvbuffer(offset, 8))
-        offset = offset + 8
+        local colors = payload:add(stteMultiZone.colors, tvbuffer(offset))
 
-        local hsbk1 = payload:add(COLOR, tvbuffer(offset, 8))
-        hsbk1:append_text("1")
-        colorTreeItem(hsbk1, tvbuffer(offset, 8))
-        offset = offset + 8
-
-        local hsbk2 = payload:add(COLOR, tvbuffer(offset, 8))
-        hsbk2:append_text("2")
-        colorTreeItem(hsbk2, tvbuffer(offset, 8))
-        offset = offset + 8
-
-        local hsbk3 = payload:add(COLOR, tvbuffer(offset, 8))
-        hsbk3:append_text("3")
-        colorTreeItem(hsbk3, tvbuffer(offset, 8))
-        offset = offset + 8
-
-        local hsbk4 = payload:add(COLOR, tvbuffer(offset, 8))
-        hsbk4:append_text("4")
-        colorTreeItem(hsbk4, tvbuffer(offset, 8))
-        offset = offset + 8
-
-        local hsbk5 = payload:add(COLOR, tvbuffer(offset, 8))
-        hsbk5:append_text("5")
-        colorTreeItem(hsbk5, tvbuffer(offset, 8))
-        offset = offset + 8
-
-        local hsbk6 = payload:add(COLOR, tvbuffer(offset, 8))
-        hsbk6:append_text("6")
-        colorTreeItem(hsbk6, tvbuffer(offset, 8))
-        offset = offset + 8
-
-        local hsbk7 = payload:add(COLOR, tvbuffer(offset, 8))
-        hsbk7:append_text("7")
-        colorTreeItem(hsbk7, tvbuffer(offset, 8))
-        offset = offset + 8
+        for i=0,7,1
+        do
+            local colortree = colors:add(COLOR, tvbuffer(offset, 8))
+            colortree:append_text(i)
+            colorTreeItem(colortree, tvbuffer(offset, 8))
+            offset = offset + 8
+        end
     end
 
     function setMoveEffect(tvbuffer, subtreeitem)
@@ -701,16 +730,190 @@ do
         local payload = subtreeitem:add(PAYLOAD, tvbuffer())
         payload:add(pl.data, tvbuffer())
     end 
+
+    -- Tiles
+    function tileTreeItem(tile, tvbuffer)
+        local offset = 0
+
+        tile:add_le(tle.reserved1, tvbuffer(offset, 2))
+        offset = offset + 2
+        
+        tile:add_le(tle.reserved2, tvbuffer(offset, 2))
+        offset = offset + 2
+        
+        tile:add_le(tle.reserved3, tvbuffer(offset, 2))
+        offset = offset + 2
+        
+        tile:add_le(tle.reserved4, tvbuffer(offset, 2))
+        offset = offset + 2
+
+        tile:add_le(tle.userX, tvbuffer(offset, 4))
+        offset = offset + 4
+
+        tile:add_le(tle.userY, tvbuffer(offset, 4))
+        offset = offset + 4
+
+        tile:add_le(tle.width, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        tile:add_le(tle.height, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        tile:add_le(tle.reserved5, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        tile:add_le(tle.deviceVersionVendor, tvbuffer(offset, 4))
+        offset = offset + 4
+
+        tile:add_le(tle.deviceVersionProduct, tvbuffer(offset, 4))
+        offset = offset + 4
+
+        tile:add_le(tle.deviceVersionVersion, tvbuffer(offset, 4))
+        offset = offset + 4
+
+        tile:add_le(tle.firmwareBuild, tvbuffer(offset, 8))
+        offset = offset + 8
+
+        tile:add_le(tle.reserved6, tvbuffer(offset, 8))
+        offset = offset + 8
+
+        tile:add_le(tle.firmwareVersion, tvbuffer(offset, 4))
+        offset = offset + 4
+
+        tile:add_le(tle.reserved7, tvbuffer(offset, 4))
+        offset = offset + 4
+    end
     
-    local switchTable = {[3] = stateService, [13] = stateHostInfo, [15] = stateHostFirmware, [17] = stateWifiInfo,
+    function stateDeviceChain(tvbuffer, subtreeitem)
+        local offset = 0
+        local payload = subtreeitem:add(STATE_DEVICE_CHAIN, tvbuffer())
+
+        payload:add_le(stteDevChain.startIndex, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(stteDevChain.totalCount, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        local tiles = payload:add(stteDevChain.tiles, tvbuffer(offset))
+
+        for i=0,15,1
+        do
+            local tiletree = tiles:add(TILE, tvbuffer(offset, 55))
+            tiletree:append_text(i)
+            tileTreeItem(tiletree, tvbuffer(offset, 55))
+            offset = offset + 55
+        end
+
+    function setUserPosition(tvbuffer, subtreeitem)
+        local offset = 0
+        local payload = subtreeitem:add(SET_USER_POSITION, tvbuffer())
+
+        payload:add_le(setUserPos.tileIndex, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(setUserPos.reserved, tvbuffer(offset, 2))
+        offset = offset + 2
+
+        payload:add_le(setUserPos.userX, tvbuffer(offset, 4))
+        offset = offset + 4
+
+        payload:add_le(setUserPos.userY, tvbuffer(offset, 4))
+    end
+
+    function getTileState(tvbuffer, subtreeitem)
+        local offset = 0
+        local payload = subtreeitem:add(GET_TILE_STATE64, tvbuffer())
+
+        payload:add_le(getTileStte.tileIndex, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(getTileStte.length, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(getTileStte.reserved, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(getTileStte.x, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(getTileStte.y, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(getTileStte.width, tvbuffer(offset, 1))
+    end
+
+    function stateTileState(tvbuffer, subtreeitem)
+        local offset = 0
+        local payload = subtreeitem:add(STATE_TILE_STATE64, tvbuffer())
+
+        payload:add_le(stteTileState.tileIndex, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(stteTileState.reserved, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(stteTileState.x, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(stteTileState.y, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(stteTileState.width, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        local colors = payload:add(stteTileState.colors, tvbuffer(offset))
+        for i=0,63,1
+        do
+            local colortree = colors:add(COLOR, tvbuffer(offset, 8))
+            colortree:append_text(i)
+            colorTreeItem(colortree, tvbuffer(offset, 8))
+            offset = offset + 8
+        end
+    end
+
+    function setTileState(tvbuffer, subtreeitem)
+        local offset = 0
+        local payload = subtreeitem:add(SET_TILE_STATE64, tvbuffer())
+
+        payload:add_le(setTileStte.tileIndex, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(setTileStte.length, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(setTileStte.reserved, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(setTileStte.x, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(setTileStte.y, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        payload:add_le(setTileStte.width, tvbuffer(offset, 1))
+        offset = offset + 1
+
+        local colors = payload:add(setTileStte.colors, tvbuffer(offset))
+        for i=0,63,1
+        do
+            local colortree = colors:add(COLOR, tvbuffer(offset, 8))
+            colortree:append_text(i)
+            colorTreeItem(colortree, tvbuffer(offset, 8))
+            offset = offset + 8
+        end
+    end
+    
+    -- message types that have payload
+    local payloadFunctionTable = {[3] = stateService, [13] = stateHostInfo, [15] = stateHostFirmware, [17] = stateWifiInfo,
                         [19] = stateWifiFirmware, [21] = setDevicePower, [22] = stateDevicePower, [24] = setLabel,
                         [25] = stateLabel, [33] = stateVersion, [35] = stateInfo, [49] = setLocation, [50] = stateLocation,
                         [52] = setGroup, [53] = stateGroup, [58] = echoRequest, [59] = echoResponse, [102] = setColor,
                         [103] = setWaveform, [119] = setWaveformOptional, [107] = state, [117] = setLightPower,
                         [118] = stateLightPower, [121] = stateInfrared, [122] = setInfrared, [501] = setColorZones,
                         [502] = getColorZones, [503] = stateZone, [506] = stateMultiZone, [508] = setMoveEffect,
-                        [509] = stateMoveEffect}
-
+                        [509] = stateMoveEffect, [702] = stateDeviceChain, [703] = setUserPosition, [707] = getTileState,
+                        [711] = stateTileState, [715] = setTileState}
+                        
 
     local t = Field.new("lifx.type")
     
@@ -768,7 +971,7 @@ do
         local messageTypeString
         if messageType then
             messageTypeString = "" .. messageType .. "(" .. messageTypeValue .. ")"
-            local payloadFunction = switchTable[messageTypeValue]
+            local payloadFunction = payloadFunctionTable[messageTypeValue]
             if payloadFunction then
                 local dataLength = tvbuffer:len() - offset
                 payloadFunction(tvbuffer(offset, dataLength), subtreeitem)
