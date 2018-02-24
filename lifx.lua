@@ -803,6 +803,7 @@ do
             tileTreeItem(tiletree, tvbuffer(offset, 55))
             offset = offset + 55
         end
+    end
 
     function setUserPosition(tvbuffer, subtreeitem)
         local offset = 0
